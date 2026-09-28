@@ -31,5 +31,5 @@ class CurriculoEstruturado(BaseModel):
     total_experience_years: float = Field(
         description="Estimativa total do tempo de experiência em anos com base no histórico profissional"
     )
-    experiences: List[ExperienciaProfissional] = Field(description="Lista de experiências profissionais ordenadas da mais recente para a mais antiga")
+    #experiences: List[ExperienciaProfissional] = Field(description="Lista de experiências profissionais ordenadas da mais recente para a mais antiga")
     profile_resume: str = Field(description="Um resumo executivo do perfil do candidato escrito pela IA em 2 a 3 frases")

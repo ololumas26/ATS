@@ -1,17 +1,23 @@
 import pypdf
 from pathlib import Path
-from openai import Client, OpenAI
+from openai import Client
 import os
 from dotenv import load_dotenv
 from schema import CurriculoEstruturado
 from functools import lru_cache
+from services.vector_store_service import structured_cv_to_string
+import json
 
 
 load_dotenv()
 
 
-openai_key = os.environ.get('OPENAI_KEY')
+openai_key = os.environ.get('OPENAI_API_KEY')
 client : Client = Client(api_key=openai_key)
+
+
+def to_dict(structured_str : str):
+    return json.loads(structured_str)
 
 def get_openai_response(cv_content : str):
 
@@ -51,14 +57,12 @@ def get_openai_response(cv_content : str):
     
     
 
-
-
 def pdf_parser(filename : str ) -> str:
 
     if not filename:
         raise FileNotFoundError("Ficheiro não encontrado ou vazio")
 
-    if not Path(filename):
+    if not Path(filename).exists():
         raise FileNotFoundError("Não encontramos o curriculo")
 
     try:
@@ -82,6 +86,10 @@ def strutured_cv(filename : str) -> CurriculoEstruturado:
 
     gross_content = pdf_parser(filename)
     strutured_content = get_openai_response(gross_content)
-    return strutured_content
+    return to_dict(strutured_content)
 
 
+file = 'eliseu_franco_cv.pdf'
+cv = strutured_cv(file)
+
+structured_cv_to_string(cv)
