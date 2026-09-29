@@ -6,6 +6,23 @@ from services.vector_store_service import structured_cv_to_string
 
 if __name__ == '__main__':
     file = 'eliseu_franco_cv.pdf'
-    cv = parse_cv_from_pdf(file)
+    
+    # file = 'eliseu_franco_cv.pdf'
+    # cv = parse_cv_from_pdf(file)
+    # stuctured = structured_cv_to_string(cv)
+    # embedding = gen_embedding_from_text(stuctured)
 
-    print(structured_cv_to_string(cv)) # Retorna uma string pronta para gerar o embedding
+    # qclient.upsert(
+    #     collection_name=CV_COLLECTION_NAME,
+    #     points=[
+    #         PointStruct(
+    #             id=1,
+    #             vector=embedding,
+    #             payload={
+    #                 'name': 'Eliseu Samulolo', 'texto': 'texto livre do curriculo'
+    #             }
+    #         )
+    #     ]
+    # )
+
+    # qclient.close()
