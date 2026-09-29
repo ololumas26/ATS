@@ -19,8 +19,9 @@ def extract_structured_cv_json(cv_content : str):
         response = client.responses.create(
             model='gpt-4o-mini',
             instructions="""
-                        Você é um especialista em recrutamento e parsing de dados. Extraia com precisão todas as informações do currículo fornecido
-                    """,
+                    Você é um especialista em recrutamento e parsing de dados.
+                    Extraia com precisão todas as informações do currículo fornecido
+                """,
             input=cv_content,
             text={
                 'format': {
