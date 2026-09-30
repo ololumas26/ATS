@@ -17,6 +17,21 @@ def  structured_cv_to_string(data : dict) -> str:
 
     return build_candidate_embedding_text(data)
 
+def build_job_embedding_text(data : dict):
+    return f"""
+    location: {data.get('job_location')},
+    expirience: {data.get('min_experience_years')},
+    profile: {data.get('job_description')},
+    skills: {data.get('required_skills')},
+    """
+
+def structured_job_to_string(data : dict) -> str:
+
+    if not isinstance(data, dict):
+        raise Exception ("A vaga estruturada deve ser um dicionário")
+
+    return build_job_embedding_text(data)
+
 def gen_embedding_from_text(cv_content : str):
 
     try:
