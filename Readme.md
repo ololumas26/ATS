@@ -1,149 +1,121 @@
 # ATS — Applicant Tracking System
 
-Sistema de tracking de candidatos que visa encontrar o candidato ideal para uma determinada vaga.
-
-O ATS lê currículos em PDF, usa a OpenAI para os transformar em dados estruturados, gera embeddings desses dados e guarda-os no [Qdrant](https://qdrant.tech/) para que possam ser comparados com vagas por semelhança semântica.
+API que avalia o quão compatível um candidato é com uma vaga. Recebe o currículo em PDF e a descrição da vaga em texto, e devolve o currículo estruturado, um score de compatibilidade e uma explicação desse score escrita para o candidato.
 
 ## Como funciona
 
 ```
-CV (PDF) ──► extração de texto ──► OpenAI (JSON estruturado) ──► texto para embedding ──► embedding ──► Qdrant
-                pypdf               gpt-4o-mini                                        text-embedding-3-small
+CV (PDF) ──► pypdf ──► OpenAI (JSON estruturado) ──► texto para embedding ──► embedding ─┐
+                                                                                         ├─► similaridade do cosseno ──► score
+Descrição da vaga (texto) ─────────────────────────────────────────────────► embedding ─┘
+                                                                                                        │
+CV estruturado + descrição da vaga ──► OpenAI (JSON estruturado) ──► explicação ◄───────────────────────┘
 ```
 
-1. **Extração** — o texto do PDF é lido com `pypdf`.
-2. **Estruturação** — o texto é enviado à OpenAI (`gpt-4o-mini`) com um JSON Schema estrito gerado a partir do modelo Pydantic `CurriculoEstruturado`. A resposta volta sempre no mesmo formato.
-3. **Texto para embedding** — os campos relevantes (localização, experiência, perfil e skills) são convertidos num texto curto e consistente.
-4. **Embedding** — o texto é convertido num vetor de 1536 dimensões com `text-embedding-3-small`.
-5. **Armazenamento** — o vetor é guardado no Qdrant (modo local, em disco), na coleção de candidatos.
+1. **Validação e extração:** o PDF é validado (tipo, extensão, não vazio), gravado num ficheiro temporário e o texto é extraído com `pypdf`. O ficheiro temporário é apagado logo após a extração.
+2. **Estruturação:** o texto é enviado ao `gpt-4o-mini` com um JSON Schema estrito gerado a partir do modelo Pydantic `CurriculoEstruturado`, por isso a resposta vem sempre no mesmo formato.
+3. **Embeddings:** o CV estruturado é convertido num texto curto (localização, experiência, perfil e skills) e, tal como a descrição da vaga, transformado num vetor de 1536 dimensões com `text-embedding-3-small`.
+4. **Score:** a similaridade do cosseno entre os dois vetores, calculada com uma implementação própria (`CosineSimilarity`).
+5. **Explicação:** o CV estruturado e a vaga são enviados ao `gpt-4o-mini`, também com JSON Schema estrito, que devolve um resumo, skills em comum, skills em falta, pontos fortes e lacunas, em português europeu e dirigidos ao candidato.
 
-As vagas seguem a mesma estrutura: o modelo `VagaEstruturada` é convertido num texto com **as mesmas etiquetas** do CV, para que os dois embeddings sejam comparáveis.
+## API
+
+### `POST /analyze`
+
+Pedido `multipart/form-data`:
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `cv_file` | ficheiro | Currículo em PDF |
+| `job_description` | texto | Descrição da vaga (não pode estar vazia) |
+
+Exemplo:
+
+```bash
+curl -X POST http://127.0.0.1:8000/analyze \
+  -F "cv_file=@curriculo.pdf;type=application/pdf" \
+  -F "job_description=Procuramos um Backend Developer Python com FastAPI e PostgreSQL..."
+```
+
+Resposta (resumida):
+
+```json
+{
+  "cv": {
+    "candidate_name": "...",
+    "candidate_location": "Luanda, Angola",
+    "technical_skills": ["Python", "FastAPI", "PostgreSQL"],
+    "total_experience_years": 3,
+    "profile_resume": "..."
+  },
+  "score": 0.52,
+  "explanation": {
+    "summary": "...",
+    "matched_skills": ["Python", "FastAPI"],
+    "missing_skills": ["Docker"],
+    "strengths": ["..."],
+    "gaps": ["..."]
+  }
+}
+```
+
+Erros:
+
+| Código | Quando |
+|---|---|
+| `400` | O ficheiro não é um PDF, não tem extensão `.pdf` ou está vazio |
+| `422` | Falta o ficheiro ou a descrição da vaga, ou a descrição só tem espaços |
+
+A documentação interativa fica disponível em `/docs` com o servidor a correr.
 
 ## Estrutura do projeto
 
 ```
 ats/
-├── main.py                        # ponto de entrada
-├── config/
-│   └── settings.py                # carrega o .env e expõe as configurações
-├── schemas/
-│   ├── cv_schema.py               # CurriculoEstruturado, ExperienciaProfissional
-│   └── job_schema.py              # VagaEstruturada
+├── app.py                                # aplicação FastAPI
+├── routers/
+│   └── analysis_router.py                # POST /analyze
 ├── services/
-│   ├── pdf_service.py             # extração de texto de PDFs
-│   ├── openai_service.py          # cliente OpenAI + extração estruturada do CV
-│   ├── cv_parser_service.py       # orquestra PDF → OpenAI → dict
-│   ├── vector_store_service.py    # texto para embedding (CV e vaga) + geração de embeddings
-│   └── qdrant_service.py          # cliente Qdrant e criação da coleção
-├── utils/
-│   └── json_utils.py
-└── exceptions/
-    └── app_exceptions.py
+│   ├── analysis_orchestrator_service.py  # orquestra o fluxo completo da análise
+│   ├── pdf_service.py                    # extração de texto do PDF
+│   ├── cv_parser_service.py              # PDF -> CV estruturado
+│   ├── openai_service.py                 # cliente OpenAI: estruturação do CV e explicação do score
+│   ├── vector_store_service.py           # texto para embedding + geração de embeddings
+│   ├── calc_cossin_service.py            # similaridade do cosseno
+│   └── qdrant_service.py                 # cliente Qdrant (ver "Estado atual")
+├── schemas/
+│   ├── analysis_schema.py                # AnalyzeForm (formulário do /analyze)
+│   ├── cv_schema.py                      # CurriculoEstruturado
+│   ├── job_schema.py                     # VagaEstruturada
+│   └── score_explanation_schema.py       # ExplicacaoScore
+├── config/settings.py                    # carrega o .env
+├── utils/json_utils.py
+└── exceptions/app_exceptions.py
 ```
 
-## Requisitos
+## Como correr
 
-- Python 3.10+
-- Uma chave da API da OpenAI
-
-Dependências principais:
-
-- `openai`
-- `pydantic`
-- `pypdf`
-- `python-dotenv`
-- `qdrant-client`
-
-## Instalação
+Requisitos: Python 3.10+ e uma chave da API da OpenAI.
 
 ```bash
-git clone <url-do-repositório>
-cd ats
+git clone https://github.com/ololumas26/ATS.git
+cd ATS
 
 python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 
-pip install openai pydantic pypdf python-dotenv qdrant-client
+cp .env.example .env   # e coloca a tua OPENAI_API_KEY
+
+uvicorn app:app --reload
 ```
 
-Cria um ficheiro `.env` na raiz do projeto:
+A API fica em `http://127.0.0.1:8000` e a documentação em `http://127.0.0.1:8000/docs`.
 
-```env
-OPENAI_API_KEY=a-tua-chave
-```
+## Estado atual e limitações
 
-## Utilização
-
-A partir da raiz do projeto:
-
-```bash
-python main.py
-```
-
-Isto lê o CV definido em `main.py`, estrutura-o, gera o embedding e grava-o no Qdrant.
-
-> O Qdrant corre em modo local e guarda os dados em `./qdrant_files`. O caminho é relativo à pasta de onde o comando é executado, por isso corre sempre a partir da raiz do projeto.
-
-### Converter uma vaga em texto
-
-```python
-from schemas.job_schema import VagaEstruturada
-from services.vector_store_service import structured_job_to_string
-
-vaga = VagaEstruturada(
-    job_title='Backend Developer (Python)',
-    company_name='Nzila Tech',
-    job_location='Luanda, Angola (híbrido)',
-    required_skills=['Python', 'FastAPI', 'PostgreSQL', 'Docker'],
-    min_experience_years=2,
-    job_description='Procuramos um Backend Developer para integrar a equipa de produto.',
-).model_dump()
-
-print(structured_job_to_string(vaga))
-```
-
-### Procurar os candidatos mais adequados a uma vaga
-
-```python
-from services.vector_store_service import gen_embedding_from_text
-from services.qdrant_service import qclient, CV_COLLECTION_NAME
-
-job_embedding = gen_embedding_from_text(structured_job_to_string(vaga))
-
-resultados = qclient.query_points(
-    collection_name=CV_COLLECTION_NAME,
-    query=job_embedding,
-    limit=10,
-)
-```
-
-## Modelos de dados
-
-### `CurriculoEstruturado`
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `candidate_name` | `str` | Nome completo do candidato |
-| `email` | `str \| None` | E-mail de contacto |
-| `phone_number` | `str \| None` | Telefone/WhatsApp |
-| `candidate_location` | `str \| None` | Cidade e país |
-| `technical_skills` | `list[str]` | Hard skills e ferramentas |
-| `total_experience_years` | `float` | Anos de experiência estimados |
-| `profile_resume` | `str` | Resumo do perfil em 2 a 3 frases |
-
-### `VagaEstruturada`
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `job_title` | `str` | Título da vaga |
-| `company_name` | `str \| None` | Empresa que publica a vaga |
-| `job_location` | `str \| None` | Cidade e país, ou "Remoto" |
-| `required_skills` | `list[str]` | Hard skills exigidas |
-| `min_experience_years` | `float` | Anos mínimos de experiência |
-| `job_description` | `str` | Descrição da vaga e do perfil procurado |
-
-## Estado atual
-
-- `main.py` processa um único CV, com o nome do ficheiro e o id do ponto definidos no código.
-- A conversão de vagas em texto já existe, mas as vagas ainda não são guardadas no Qdrant.
-- O score devolvido pelo Qdrant é o score bruto do cosseno: serve para ordenar candidatos, mas não é uma percentagem de compatibilidade.
+- **O score é o cosseno bruto.** Serve para ordenar candidatos, mas não é uma percentagem de compatibilidade: com `text-embedding-3-small` os valores tendem a ficar numa faixa estreita. Uma versão futura deveria calibrá-lo com dados reais.
+- **O texto do CV e o da vaga têm formatos diferentes.** O CV entra no embedding como texto estruturado com etiquetas e a vaga como texto livre, o que tende a baixar o score em geral.
+- **Cada análise faz 4 chamadas à OpenAI:** estruturação do CV, dois embeddings e a explicação.
+- **O Qdrant não é usado pela API.** O `qdrant_service.py` e os modelos `VagaEstruturada`/`structured_job_to_string` vêm de uma fase anterior em que os candidatos eram guardados numa base vetorial para pesquisa.
+- **Dados pessoais:** o texto do CV é enviado à OpenAI e fica sujeito às políticas de retenção da API. A aplicação em si não guarda os currículos.
