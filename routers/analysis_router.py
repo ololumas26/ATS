@@ -5,29 +5,21 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException
+from fastapi import APIRouter, File, HTTPException, Depends
 
 from schemas.analysis_schema import AnalyzeForm
 from services.cv_parser_service import parse_cv_from_pdf
+
+from services.analysis_orchestrator_service import AnalysisOrchestratorService
 
 
 router = APIRouter(tags=['analysis'])
 
 
 @router.post('/analyze')
-def analyze(data: Annotated[AnalyzeForm, File()]):  # File() faz o /docs declarar multipart/form-data
+def analyze(data: Annotated[AnalyzeForm, File()],
+        orchestror_service : AnalysisOrchestratorService = Depends(AnalysisOrchestratorService)):  # File() faz o /docs declarar multipart/form-data
 
-    if data.cv_file.content_type != 'application/pdf':
-        raise HTTPException(status_code=400, detail="O currículo deve ser um ficheiro PDF")
+        response = orchestror_service.analyze(data.cv_file, data.job_description)
 
-    # O parse_cv_from_pdf espera um caminho, por isso o upload é gravado num ficheiro temporário
-    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
-        shutil.copyfileobj(data.cv_file.file, temp_file)
-        temp_path = temp_file.name
-
-    try:
-        cv = parse_cv_from_pdf(temp_path)
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
-
-    return {'cv': cv, 'job_description': data.job_description}
+        return response
