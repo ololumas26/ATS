@@ -19,3 +19,11 @@ class VagaEstruturada(BaseModel):
         description="Anos mínimos de experiência exigidos para a vaga"
     )
     job_description: str = Field(description="Descrição da vaga e do perfil procurado")
+
+
+class DescricaoVagaRequest(BaseModel):
+
+    # Remove espaços no início/fim antes de validar, para rejeitar descrições só com espaços
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    job_description: str = Field(min_length=1, description="Descrição da vaga em texto livre")
