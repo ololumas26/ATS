@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, File, HTTPException
 
 from schemas.analysis_schema import AnalyzeForm
 from services.cv_parser_service import parse_cv_from_pdf
@@ -15,7 +15,7 @@ router = APIRouter(tags=['analysis'])
 
 
 @router.post('/analyze')
-def analyze(data: Annotated[AnalyzeForm, Form()]):
+def analyze(data: Annotated[AnalyzeForm, File()]):  # File() faz o /docs declarar multipart/form-data
 
     if data.cv_file.content_type != 'application/pdf':
         raise HTTPException(status_code=400, detail="O currículo deve ser um ficheiro PDF")
